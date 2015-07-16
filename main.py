@@ -148,8 +148,8 @@ while (cv2.waitKey(1) & 0xFF != ord('q')) and (t1 - t0 < wait):
                     print "GazeDirection and HeadAngles values don't hold valid data"                
 
             # get position relative to robot frame with people perception module
-            target_pos = memory.getData("PeoplePerception/Person/" + str(person_id) + "/PositionInRobotFrame")
-            print "Person's face position:", target_pos
+            face_loc = memory.getData("PeoplePerception/Person/" + str(person_id) + "/PositionInRobotFrame")
+            print "Person's face location:", face_loc
 
     # get image from nao
     nao_image = camera.getImageRemote(video_client)
