@@ -32,6 +32,66 @@ def rad2deg(rad):
 
     return deg
 
+def getPeopleIDs():
+
+    # get list of IDs of people looking at robot
+    people_ids = memory.getData("GazeAnalysis/PeopleLookingAtRobot")
+
+def getPersonGaze(person_id):
+
+    # if data exists
+    try:
+        # extract GazeDirection and HeadAngles values
+        gaze_dir = memory.getData("PeoplePerception/Person/" + str(person_id) + "/GazeDirection")
+        head_angles =  memory.getData("PeoplePerception/Person/" + str(person_id) + "/HeadAngles")
+
+    # if getting gaze direction or head angles values caused an error
+    except RuntimeError:
+        print "Couldn't get gaze direction and head angles"
+
+    # if able to retrieve gaze direction and head angles values
+    else:
+
+        # if gaze direction and head angles values hold valid data
+        if len(gaze_dir) == 2 and len(head_angles) == 3:
+
+            # # print person ID
+            # print "Person | ID", person_id
+            
+            # extract gaze direction and head angles data
+            person_eye_yaw = gaze_dir[0]
+            person_eye_pitch = gaze_dir[1]
+            
+            person_head_yaw = head_angles[0]
+            person_head_pitch = head_angles[1]
+            
+            # calculate overall gaze values (not in relation to robot's POV)
+            person_gaze_yaw = -(person_eye_yaw + person_head_yaw)
+            person_gaze_pitch = person_eye_pitch + person_head_pitch
+
+            # # print overall gaze values
+            # print '\tPerson gaze yaw:', person_gaze_yaw
+            # print '\tPeron gaze pitch:', person_gaze_pitch
+
+            # return tuple of gaze yaw and pitch
+            return [person_gaze_yaw, person_gaze_pitch]
+
+        else:
+            print "GazeDirection and HeadAngles values don't hold valid data"
+
+def getPersonLocation(person_id):
+    # get position relative to robot frame with people perception module
+    try:
+        person_head_loc = memory.getData("PeoplePerception/Person/" + str(person_id) + "/PositionInRobotFrame")
+    except RuntimeError:
+        print "Couldn't get person's face location"
+    else:
+        person_x = round(person_head_loc[0], 1)
+        person_y = round(person_head_loc[1], 1)
+        person_z = round(person_head_loc[2], 1)
+
+        # print "The head is\t", person_x, "m away from me,\t", person_y, "m to the side, and\t", person_z, "m higher than my feet"
+
 # get haar cascades for face and eye detection
 face_cascade = cv2.CascadeClassifier('haar_cascades/haarcascade_frontalface_default.xml')
 eye_cascade = cv2.CascadeClassifier('haar_cascades/haarcascade_eye.xml')
@@ -68,14 +128,20 @@ posture = ALProxy("ALRobotPosture")
 memory = ALProxy("ALMemory")
 gaze = ALProxy("ALGazeAnalysis")
 
+# set brightness to default
+camera.setCameraParameterToDefault("python_client", 0)
+
 # subscribe to camera
 video_client = camera.subscribeCamera("python_client", cam_num, resolution, colorspace, fps)
 
-# set face tracker to use whole body, not just head
+# set face tracker to use whole body, not just heads
 face_tracker.setWholeBodyOn(False)
 
 # stiffen whole body
 motion.setStiffnesses("Body", 1.0)
+
+# sit down slowly
+posture.goToPosture("Crouch", 0.2)
 
 # stand up in balanced stance
 # posture.goToPosture("StandInit", 0.5)
@@ -93,67 +159,24 @@ while (cv2.waitKey(1) & 0xFF != ord('q')) and (t1 - t0 < wait):
     # get running time
     t1 = time.time()
 
-    angles = rad2deg(motion.getAngles("Head", False))
+    # retrieve robot head angles and convert to degrees
+    angles = motion.getAngles("Head", False)
 
-    print "Robot Head Angles:",
-    for angle in angles:
-        print '{0: >4}'.format(str(angle)), # sets right alignment and padding of up to 6
-    print
+    # unpack robot head angles
+    robot_head_yaw = angles[0] # left (+) and right (-)
+    robot_head_pitch = -angles[1] # up (+) and down(-)
 
-    # get list of IDs of people looking at robot
-    people_ids = memory.getData("GazeAnalysis/PeopleLookingAtRobot")
-    print "People ID's:", people_ids
+    people_ids = getPeopleIDs()
 
     # if people_ids isn't "None" object
     if people_ids:
-                
-        # extract and print each person's data
-        for person_id in people_ids:
 
-            # if data exists
-            try:
-                # extract GazeDirection and HeadAngles values
-                gaze_dir = memory.getData("PeoplePerception/Person/" + str(person_id) + "/GazeDirection")
-                head_angles =  memory.getData("PeoplePerception/Person/" + str(person_id) + "/HeadAngles")
+        # get ID of first person
+        person_id = people_ids[0]
 
-            # if getting gaze direction or head angles values caused an error
-            except RuntimeError:
-                print "Couldn't get gaze direction and head angles"
+        person_gaze = getPersonGaze(person_id)
 
-            # if able to retrieve gaze direction and head angles values
-            else:
-
-                # if gaze direction and head angles values hold valid data
-                if len(gaze_dir) == 2 and len(head_angles) == 3:
-
-                    # print person ID
-                    print "Person | ID", person_id
-                    
-                    # extract gaze direction and head angles data
-                    gaze_yaw = rad2deg(gaze_dir[0])
-                    gaze_pitch = rad2deg(gaze_dir[1])
-                    
-                    head_yaw = rad2deg(head_angles[0])
-                    head_pitch = rad2deg(head_angles[1])
-                    head_roll = rad2deg(head_angles[2])
-                    
-                    yaw = gaze_yaw + head_yaw
-                    pitch = gaze_pitch + head_pitch
-
-                    print '\tPerson head yaw:', yaw
-                    print '\tPeron head pitch:', pitch
-                    print '\tPerson head roll:', head_roll
-
-                else:
-                    print "GazeDirection and HeadAngles values don't hold valid data"                
-
-            # get position relative to robot frame with people perception module
-            try:
-                face_loc = memory.getData("PeoplePerception/Person/" + str(person_id) + "/PositionInRobotFrame")
-            except RuntimeError:
-                print "Couldn't get person's face location"
-            else:
-                print "Person's face location:", face_loc
+        person_location = getPersonLocation(person_id)
 
     # get image from nao
     nao_image = camera.getImageRemote(video_client)
