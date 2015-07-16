@@ -1,7 +1,3 @@
-# nao track face show video
-# stuff taken from lots of tutorials
-# 7/2/2015
-
 from __future__ import division
 import cv2
 import numpy
@@ -37,8 +33,8 @@ def rad2deg(rad):
     return deg
 
 # get haar cascades for face and eye detection
-face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
-eye_cascade = cv2.CascadeClassifier('haarcascade_eye.xml')
+face_cascade = cv2.CascadeClassifier('haar_cascades/haarcascade_frontalface_default.xml')
+eye_cascade = cv2.CascadeClassifier('haar_cascades/haarcascade_eye.xml')
 
 # set face detection tuning arguments
 scale_factor = 1.1
@@ -99,13 +95,14 @@ while (cv2.waitKey(1) & 0xFF != ord('q')) and (t1 - t0 < wait):
 
     angles = rad2deg(motion.getAngles("Head", False))
 
-    print "Angles:",
+    print "Robot Head Angles:",
     for angle in angles:
         print '{0: >4}'.format(str(angle)), # sets right alignment and padding of up to 6
     print
 
     # get list of IDs of people looking at robot
     people_ids = memory.getData("GazeAnalysis/PeopleLookingAtRobot")
+    print "People ID's:", people_ids
 
     # if people_ids isn't "None" object
     if people_ids:
@@ -143,16 +140,16 @@ while (cv2.waitKey(1) & 0xFF != ord('q')) and (t1 - t0 < wait):
                     yaw = gaze_yaw + head_yaw
                     pitch = gaze_pitch + head_pitch
 
-                    print '\tyaw:', yaw
-                    print '\tpitch:', pitch
-                    print '\thead roll:', head_roll
+                    print '\tPerson head yaw:', yaw
+                    print '\tPeron head pitch:', pitch
+                    print '\tPerson head roll:', head_roll
 
                 else:
                     print "GazeDirection and HeadAngles values don't hold valid data"                
 
             # get position relative to robot frame with people perception module
             target_pos = memory.getData("PeoplePerception/Person/" + str(person_id) + "/PositionInRobotFrame")
-            print "target position:", target_pos
+            print "Person's face position:", target_pos
 
     # get image from nao
     nao_image = camera.getImageRemote(video_client)
