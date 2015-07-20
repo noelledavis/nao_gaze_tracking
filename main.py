@@ -37,6 +37,8 @@ def getPeopleIDs():
     # get list of IDs of people looking at robot
     people_ids = memory.getData("GazeAnalysis/PeopleLookingAtRobot")
 
+    return people_ids
+
 def getPersonGaze(person_id):
 
     # if data exists
@@ -55,8 +57,8 @@ def getPersonGaze(person_id):
         # if gaze direction and head angles values hold valid data
         if len(gaze_dir) == 2 and len(head_angles) == 3:
 
-            # # print person ID
-            # print "Person | ID", person_id
+            # print person ID
+            print "Person | ID", person_id
             
             # extract gaze direction and head angles data
             person_eye_yaw = gaze_dir[0]
@@ -69,9 +71,9 @@ def getPersonGaze(person_id):
             person_gaze_yaw = -(person_eye_yaw + person_head_yaw)
             person_gaze_pitch = person_eye_pitch + person_head_pitch
 
-            # # print overall gaze values
-            # print '\tPerson gaze yaw:', person_gaze_yaw
-            # print '\tPeron gaze pitch:', person_gaze_pitch
+            # print overall gaze values
+            print '\tPerson gaze yaw:', person_gaze_yaw
+            print '\tPeron gaze pitch:', person_gaze_pitch
 
             # return tuple of gaze yaw and pitch
             return [person_gaze_yaw, person_gaze_pitch]
@@ -91,6 +93,40 @@ def getPersonLocation(person_id):
         person_z = round(person_head_loc[2], 1)
 
         # print "The head is\t", person_x, "m away from me,\t", person_y, "m to the side, and\t", person_z, "m higher than my feet"
+
+def getOpenCVFaces(nao_image, width = 500, show = False):
+
+    # translate into one opencv can use
+    img = (numpy.reshape(numpy.frombuffer(nao_image[6], dtype = '%iuint8' % nao_image[2]), (nao_image[1], nao_image[0], nao_image[2])))
+    
+    # resize image with opencv
+    img = resize(img, width)
+
+    # find faces
+    faces = face_cascade.detectMultiScale(gray(img), scale_factor, min_neighbors)
+
+    # for each face found
+    for (x,y,w,h) in faces:
+        # draw rectangle around face
+        cv2.rectangle(img, (x,y), (x+w, y+h), (255, 0, 0), 1)
+        
+        # get crop of top half of face
+        face = img[y:y+h/2, x:x+w]
+
+        # detect eyes in that face
+        eyes = eye_cascade.detectMultiScale(gray(face))
+        
+        # for each eye
+        for (ex,ey,ew,eh) in eyes:
+            # draw rectangle around eye
+            cv2.rectangle(face, (ex, ey), (ex+ew, ey+eh), (0, 255, 0), 1)
+
+    # if "show" variable set to True
+    if show:
+        # display marked-up image
+        cv2.imshow('img', img)
+
+    return faces
 
 # get haar cascades for face and eye detection
 face_cascade = cv2.CascadeClassifier('haar_cascades/haarcascade_frontalface_default.xml')
@@ -134,9 +170,6 @@ camera.setCameraParameterToDefault("python_client", 0)
 # subscribe to camera
 video_client = camera.subscribeCamera("python_client", cam_num, resolution, colorspace, fps)
 
-# set face tracker to use whole body, not just heads
-face_tracker.setWholeBodyOn(False)
-
 # stiffen whole body
 motion.setStiffnesses("Body", 1.0)
 
@@ -146,9 +179,15 @@ posture.goToPosture("Crouch", 0.2)
 # stand up in balanced stance
 # posture.goToPosture("StandInit", 0.5)
 
+# set face tracker to use whole body, not just heads
+face_tracker.setWholeBodyOn(False)
+
 # start face tracker
 face_tracker.startTracker()
 print 'Face tracker successfully started!'
+
+# subscribe to gaze analysis
+gaze.subscribe("_")
 
 # initialize timers
 t0 = time.time()
@@ -174,46 +213,26 @@ while (cv2.waitKey(1) & 0xFF != ord('q')) and (t1 - t0 < wait):
         # get ID of first person
         person_id = people_ids[0]
 
+        # get person gaze data
         person_gaze = getPersonGaze(person_id)
 
+        # get person location data
         person_location = getPersonLocation(person_id)
 
     # get image from nao
     nao_image = camera.getImageRemote(video_client)
 
-    # translate into one opencv can use
-    img = (numpy.reshape(numpy.frombuffer(nao_image[6], dtype = '%iuint8' % nao_image[2]), (nao_image[1], nao_image[0], nao_image[2])))
-    
-    # resize image with opencv
-    img = resize(img, 500)
+    # display faces + eyes with opencv
+    faces = getOpenCVFaces(nao_image, show = True)
 
-    # find faces
-    faces = face_cascade.detectMultiScale(gray(img), scale_factor, min_neighbors)
-
-    # for each face found
-    for (x,y,w,h) in faces:
-        # draw rectangle around face
-        cv2.rectangle(img, (x,y), (x+w, y+h), (255, 0, 0), 1)
-        
-        # get crop of top half of face
-        face = img[y:y+h/2, x:x+w]
-
-        # detect eyes in that face
-        eyes = eye_cascade.detectMultiScale(gray(face))
-        
-        # for each eye
-        for (ex,ey,ew,eh) in eyes:
-            # draw rectangle around eye
-            cv2.rectangle(face, (ex, ey), (ex+ew, ey+eh), (0, 255, 0), 1)
-
-    # display marked-up image
-    cv2.imshow('img', img)
-
-# unsubscribe from camera
-camera.unsubscribe(video_client)
+# unsubscribe from gaze analysis
+gaze.unsubscribe("_")
 
 # stop face tracker
 face_tracker.stopTracker()
+
+# unsubscribe from camera
+camera.unsubscribe(video_client)
 
 # sit down slowly
 posture.goToPosture("Crouch", 0.2)
