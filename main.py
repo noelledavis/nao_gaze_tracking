@@ -40,6 +40,7 @@ def getPeopleIDs():
     return people_ids
 
 def getPersonGaze(person_id):
+    """ Returns person's gaze as a list of yaw (left -, right +) and pitch (up pi, down 0) in radians, respectively """
 
     # if data exists
     try:
@@ -68,8 +69,8 @@ def getPersonGaze(person_id):
             person_head_pitch = head_angles[1]
             
             # calculate overall gaze values (not in relation to robot's POV)
-            person_gaze_yaw = -(person_eye_yaw + person_head_yaw)
-            person_gaze_pitch = person_eye_pitch + person_head_pitch
+            person_gaze_yaw = -(person_eye_yaw + person_head_yaw) # person's left is (-), person's right is (+)
+            person_gaze_pitch = person_eye_pitch + person_head_pitch + math.pi / 2 # all the way up is pi, all the way down is 0
 
             # print overall gaze values
             print '\tPerson gaze yaw:', person_gaze_yaw
@@ -81,18 +82,82 @@ def getPersonGaze(person_id):
         else:
             print "GazeDirection and HeadAngles values don't hold valid data"
 
+def getRobotHeadAngles():
+
+    # retrieve robot head angles
+    robot_head_angles = motion.getAngles("Head", False)
+
+    # unpack robot head angles
+    robot_head_yaw = robot_head_angles[0] # left (+) and right (-)
+    robot_head_pitch = -robot_head_angles[1] + math.pi / 2 # all the way up (pi) and all the way down (0), see http://doc.aldebaran.com/2-1/family/robots/joints_robot.html
+
+    # return scaled robot head angles
+    return [robot_head_yaw, robot_head_pitch]
+
+
 def getPersonLocation(person_id):
-    # get position relative to robot frame with people perception module
+    """ Returns person's location as a list of x, y (right of robot -, left of robot +), and z coordinates in meters relative to the spot between the robot's feet """
+    
     try:
         person_head_loc = memory.getData("PeoplePerception/Person/" + str(person_id) + "/PositionInRobotFrame")
+
     except RuntimeError:
         print "Couldn't get person's face location"
+        return None
+
     else:
-        person_x = round(person_head_loc[0], 1)
-        person_y = round(person_head_loc[1], 1)
-        person_z = round(person_head_loc[2], 1)
+        person_x = person_head_loc[0]
+        person_y = person_head_loc[1]
+        person_z = person_head_loc[2]
 
         # print "The head is\t", person_x, "m away from me,\t", person_y, "m to the side, and\t", person_z, "m higher than my feet"
+
+    return [person_x, person_y, person_z]
+
+def personLookingAtObjects(person_gaze):
+
+    # if person is looking lower than straight ahead (gaze pitch < 90 deg)
+    if person_gaze[1] < math.pi / 2:
+        return True
+
+    return False
+
+def getObjectLocation(person_gaze, person_location, robot_head_angles):
+    """ Returns object location relative to spot between robot's feet as a list of x, y, z in meters and yaw, pitch in radians """
+
+    # unpack person gaze data (assuming person is looking at object)
+    person_object_yaw = person_gaze[0]
+    person_object_pitch = person_gaze[1]
+    print "person gaze:", person_gaze
+
+    # unpack person location data relative to robot
+    robot_person_x = person_location[0]
+    robot_person_y = person_location[1]
+    robot_person_z = person_location[2]
+    print "person loc:", person_location
+
+    # unpack robot head angle data (robot is tracking person's face)
+    robot_person_yaw = robot_head_angles[0]
+    robot_person_pitch = robot_head_angles[1]
+    print "robot gaze:", robot_head_angles
+
+    # calculate x distance between robot and object
+    person_object_x = robot_person_z * math.tan(person_object_pitch)
+    print "pers obj x", person_object_x
+    robot_object_x = robot_person_x - person_object_x
+
+    # calculate y distance between robot and object (left of robot +, right of robot -)
+    person_object_y = person_object_x * math.tan(robot_person_yaw)
+    print "pers obj y", person_object_y
+    robot_object_y = robot_person_y + person_object_y
+
+    # calculate robot head yaw needed to gaze at object
+    robot_object_yaw = math.atan(robot_object_y / robot_object_x)
+
+    robot_object_z = 0
+    robot_object_pitch = 0
+
+    return [robot_object_x, robot_object_y, robot_object_z, robot_object_yaw, robot_object_pitch]
 
 def getOpenCVFaces(nao_image, width = 500, show = False):
 
@@ -195,15 +260,11 @@ t1 = 0
 
 # while 'q' is not pressed and time limit isn't reached
 while (cv2.waitKey(1) & 0xFF != ord('q')) and (t1 - t0 < wait):
+
     # get running time
     t1 = time.time()
 
-    # retrieve robot head angles and convert to degrees
-    angles = motion.getAngles("Head", False)
-
-    # unpack robot head angles
-    robot_head_yaw = angles[0] # left (+) and right (-)
-    robot_head_pitch = -angles[1] # up (+) and down(-)
+    robot_head_angles = getRobotHeadAngles()
 
     people_ids = getPeopleIDs()
 
@@ -218,6 +279,14 @@ while (cv2.waitKey(1) & 0xFF != ord('q')) and (t1 - t0 < wait):
 
         # get person location data
         person_location = getPersonLocation(person_id)
+
+        # if person_gaze isn't "None" object
+        if person_gaze:
+
+            # if person could be looking at an object
+            if personLookingAtObjects(person_gaze):
+                object_location = getObjectLocation(person_gaze, person_location, robot_head_angles)
+                print object_location
 
     # get image from nao
     nao_image = camera.getImageRemote(video_client)
