@@ -32,6 +32,16 @@ def rad2deg(rad):
 
     return deg
 
+def deg2rad(deg):
+    if isinstance(deg, list):
+        rad = []
+        for angle in deg:
+            rad.append(deg2rad(angle))
+    else:
+        rad = deg * math.pi / 180
+
+    return rad
+
 def getPeopleIDs():
 
     # get list of IDs of people looking at robot
@@ -139,10 +149,10 @@ def getObjectLocation(person_gaze, person_location, debug = False):
     robot_person_z = person_location[2]
 
     # calculate x distance between robot and object
-    person_object_x = robot_person_z * math.tan(person_object_pitch)
-    # person_object_x = 0.8
-    robot_object_x = robot_person_x - person_object_x
-    # robot_object_x = 0.5
+    # person_object_x = robot_person_z * math.tan(person_object_pitch)
+    person_object_x = 0.8
+    # robot_object_x = robot_person_x - person_object_x
+    robot_object_x = 0.5
 
     # calculate y distance between robot and object (left of robot +, right of robot -)
     person_object_y = person_object_x * math.tan(person_object_yaw)
@@ -157,7 +167,6 @@ def getObjectLocation(person_gaze, person_location, debug = False):
     if debug:
         print "\tperson gaze:", rad2deg(person_gaze)
         print "\tperson loc:", person_location
-        print "\trobot gaze:", rad2deg(robot_head_angles)
         print "\tpers obj x", person_object_x
         print "\tpers obj y", person_object_y
 
@@ -216,6 +225,13 @@ fps = 10
 
 # set face-tracking time limit
 wait = 180
+
+# list of object angles and confidences in the form [[angle, confidence], [angle, confidence]]
+object_angles = [-30, -10, -9, 15, 40]
+object_confidences = [0] * len(object_angles)
+
+# set angle error in rad for determining which object(s) person is looking at
+angle_error = 0.2
 
 # create broker to construct NAOqi module and listen to other modules
 broker = ALBroker("broker",
@@ -287,8 +303,19 @@ while (cv2.waitKey(1) & 0xFF != ord('q')) and (t1 - t0 < wait):
             # if person could be looking at an object
             if personLookingAtObjects(person_gaze):
 
-                object_location = getObjectLocation(person_gaze, person_location, debug = True)
-                print object_location
+                gaze_location = getObjectLocation(person_gaze, person_location, debug = True)
+                print gaze_location
+
+                gaze_angle = gaze_location[3]
+                
+                # for count and angle of each object
+                for i, object_angle in enumerate(object_angles):
+
+                    # if gaze angle is within angle_error of the object angle on either side
+                    if abs(object_angle - gaze_angle) <= angle_error:
+                        
+                        # add 1 to the confidence for that object
+                        object_confidences[i] += 1
 
     # get image from nao
     nao_image = camera.getImageRemote(video_client)
@@ -296,20 +323,41 @@ while (cv2.waitKey(1) & 0xFF != ord('q')) and (t1 - t0 < wait):
     # display image with opencv
     showWithOpenCV(nao_image)
 
+print object_confidences
+
 # unsubscribe from gaze analysis
 gaze.unsubscribe("_")
 
 # stop face tracker
 face_tracker.stopTracker()
+print "Face tracker stopped."
 
 # unsubscribe from camera
 camera.unsubscribe(video_client)
+
+cv2.destroyAllWindows()
+
+# if all confidences are zero
+if not all(confidence == 0 for confidence in object_confidences):
+
+    # normalize confidences to values in the range [0, 100]
+    object_confidences = [confidence / max(object_confidences) * 100 for confidence in object_confidences]
+
+    # communicate confidences for each object
+    print "Object confidences:", object_confidences
+
+    # determine which objects have highest confidence levels
+    max_confidence = max(object_confidences)
+    best_object_indices = [i for i, confidence in enumerate(object_confidences) if confidence == max_confidence]
+
+    for i in best_object_indices:
+        print "Are you thinking of object " + str(i) + "?"
+        motion.setAngles("HeadYaw", object_angles[i], 0.2)
+        motion.setAngles("HeadPitch", math.pi / 12, 0.2)
+        time.sleep(3)
 
 # sit down slowly
 posture.goToPosture("Crouch", 0.2)
 
 # remove stiffness
 motion.setStiffnesses("Body", 0.0)
-print "Face tracker stopped."
-
-cv2.destroyAllWindows()
