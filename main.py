@@ -67,14 +67,18 @@ def getPersonGaze(person_id):
             
             person_head_yaw = head_angles[0]
             person_head_pitch = head_angles[1]
+
+            robot_head_yaw, robot_head_pitch = getRobotHeadAngles()
             
             # calculate overall gaze values (not in relation to robot's POV)
-            person_gaze_yaw = -(person_eye_yaw + person_head_yaw) # person's left is (-), person's right is (+)
-            person_gaze_pitch = person_eye_pitch + person_head_pitch + math.pi / 2 # all the way up is pi, all the way down is 0
+            person_gaze_yaw = -(person_eye_yaw + person_head_yaw) - robot_head_yaw # person's left is (-), person's right is (+)
+            person_gaze_pitch = person_eye_pitch + person_head_pitch - robot_head_pitch + math.pi # all the way up is pi, all the way down is 0
 
-            # print overall gaze values
-            print '\tPerson gaze yaw:', person_gaze_yaw
-            print '\tPeron gaze pitch:', person_gaze_pitch
+            print "\tRAW PITCH:", rad2deg(person_eye_pitch), rad2deg(person_head_pitch), rad2deg(person_eye_pitch + person_head_pitch)
+
+            # # print overall gaze values
+            # print '\tPerson gaze yaw:', person_gaze_yaw
+            # print '\tPeron gaze pitch:', person_gaze_pitch
 
             # return tuple of gaze yaw and pitch
             return [person_gaze_yaw, person_gaze_pitch]
@@ -122,33 +126,26 @@ def personLookingAtObjects(person_gaze):
 
     return False
 
-def getObjectLocation(person_gaze, person_location, robot_head_angles):
+def getObjectLocation(person_gaze, person_location, debug = False):
     """ Returns object location relative to spot between robot's feet as a list of x, y, z in meters and yaw, pitch in radians """
 
     # unpack person gaze data (assuming person is looking at object)
     person_object_yaw = person_gaze[0]
     person_object_pitch = person_gaze[1]
-    print "person gaze:", person_gaze
 
     # unpack person location data relative to robot
     robot_person_x = person_location[0]
     robot_person_y = person_location[1]
     robot_person_z = person_location[2]
-    print "person loc:", person_location
-
-    # unpack robot head angle data (robot is tracking person's face)
-    robot_person_yaw = robot_head_angles[0]
-    robot_person_pitch = robot_head_angles[1]
-    print "robot gaze:", robot_head_angles
 
     # calculate x distance between robot and object
     person_object_x = robot_person_z * math.tan(person_object_pitch)
-    print "pers obj x", person_object_x
+    # person_object_x = 0.8
     robot_object_x = robot_person_x - person_object_x
+    # robot_object_x = 0.5
 
     # calculate y distance between robot and object (left of robot +, right of robot -)
-    person_object_y = person_object_x * math.tan(robot_person_yaw)
-    print "pers obj y", person_object_y
+    person_object_y = person_object_x * math.tan(person_object_yaw)
     robot_object_y = robot_person_y + person_object_y
 
     # calculate robot head yaw needed to gaze at object
@@ -157,9 +154,16 @@ def getObjectLocation(person_gaze, person_location, robot_head_angles):
     robot_object_z = 0
     robot_object_pitch = 0
 
+    if debug:
+        print "\tperson gaze:", rad2deg(person_gaze)
+        print "\tperson loc:", person_location
+        print "\trobot gaze:", rad2deg(robot_head_angles)
+        print "\tpers obj x", person_object_x
+        print "\tpers obj y", person_object_y
+
     return [robot_object_x, robot_object_y, robot_object_z, robot_object_yaw, robot_object_pitch]
 
-def getOpenCVFaces(nao_image, width = 500, show = False):
+def showWithOpenCV(nao_image, width = 500, detectFaces = False):
 
     # translate into one opencv can use
     img = (numpy.reshape(numpy.frombuffer(nao_image[6], dtype = '%iuint8' % nao_image[2]), (nao_image[1], nao_image[0], nao_image[2])))
@@ -167,31 +171,30 @@ def getOpenCVFaces(nao_image, width = 500, show = False):
     # resize image with opencv
     img = resize(img, width)
 
-    # find faces
-    faces = face_cascade.detectMultiScale(gray(img), scale_factor, min_neighbors)
+    # if detectFaces argument is set to True
+    if detectFaces:
 
-    # for each face found
-    for (x,y,w,h) in faces:
-        # draw rectangle around face
-        cv2.rectangle(img, (x,y), (x+w, y+h), (255, 0, 0), 1)
-        
-        # get crop of top half of face
-        face = img[y:y+h/2, x:x+w]
+        # find faces
+        faces = face_cascade.detectMultiScale(gray(img), scale_factor, min_neighbors)
 
-        # detect eyes in that face
-        eyes = eye_cascade.detectMultiScale(gray(face))
-        
-        # for each eye
-        for (ex,ey,ew,eh) in eyes:
-            # draw rectangle around eye
-            cv2.rectangle(face, (ex, ey), (ex+ew, ey+eh), (0, 255, 0), 1)
+        # for each face found
+        for (x,y,w,h) in faces:
+            # draw rectangle around face
+            cv2.rectangle(img, (x,y), (x+w, y+h), (255, 0, 0), 1)
+            
+            # get crop of top half of face
+            face = img[y:y+h/2, x:x+w]
 
-    # if "show" variable set to True
-    if show:
-        # display marked-up image
-        cv2.imshow('img', img)
+            # detect eyes in that face
+            eyes = eye_cascade.detectMultiScale(gray(face))
+            
+            # for each eye
+            for (ex,ey,ew,eh) in eyes:
+                # draw rectangle around eye
+                cv2.rectangle(face, (ex, ey), (ex+ew, ey+eh), (0, 255, 0), 1)
 
-    return faces
+    # display marked-up image
+    cv2.imshow('img', img)
 
 # get haar cascades for face and eye detection
 face_cascade = cv2.CascadeClassifier('haar_cascades/haarcascade_frontalface_default.xml')
@@ -205,7 +208,7 @@ min_neighbors = 6
 IP = 'bobby.local'
 PORT = 9559
 
-# set camera values
+# set nao camera values
 cam_num = 0
 resolution = 2
 colorspace = 13
@@ -264,8 +267,6 @@ while (cv2.waitKey(1) & 0xFF != ord('q')) and (t1 - t0 < wait):
     # get running time
     t1 = time.time()
 
-    robot_head_angles = getRobotHeadAngles()
-
     people_ids = getPeopleIDs()
 
     # if people_ids isn't "None" object
@@ -285,14 +286,15 @@ while (cv2.waitKey(1) & 0xFF != ord('q')) and (t1 - t0 < wait):
 
             # if person could be looking at an object
             if personLookingAtObjects(person_gaze):
-                object_location = getObjectLocation(person_gaze, person_location, robot_head_angles)
+                
+                object_location = getObjectLocation(person_gaze, person_location, debug = True)
                 print object_location
 
     # get image from nao
     nao_image = camera.getImageRemote(video_client)
 
-    # display faces + eyes with opencv
-    faces = getOpenCVFaces(nao_image, show = True)
+    # display image with opencv
+    showWithOpenCV(nao_image)
 
 # unsubscribe from gaze analysis
 gaze.unsubscribe("_")
