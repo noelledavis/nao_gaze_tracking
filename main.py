@@ -40,7 +40,8 @@ def getPeopleIDs():
     return people_ids
 
 def getPersonGaze(person_id):
-    """ Returns person's gaze as a list of yaw (left -, right +) and pitch (up pi, down 0) in radians, respectively """
+    """ Returns person's gaze as a list of yaw (left -, right +) and pitch (up pi, down 0) in radians, respectively. 
+    Bases angles on person's eye gaze and head angles, and compensates for variable robot head position. """
 
     # if data exists
     try:
@@ -80,7 +81,7 @@ def getPersonGaze(person_id):
             # print '\tPerson gaze yaw:', person_gaze_yaw
             # print '\tPeron gaze pitch:', person_gaze_pitch
 
-            # return tuple of gaze yaw and pitch
+            # return list of person's gaze yaw and pitch
             return [person_gaze_yaw, person_gaze_pitch]
 
         else:
@@ -98,9 +99,8 @@ def getRobotHeadAngles():
     # return scaled robot head angles
     return [robot_head_yaw, robot_head_pitch]
 
-
 def getPersonLocation(person_id):
-    """ Returns person's location as a list of x, y (right of robot -, left of robot +), and z coordinates in meters relative to the spot between the robot's feet """
+    """ Returns person's location as a list of x, y (right of robot -, left of robot +), and z coordinates in meters relative to spot between robot's feet """
     
     try:
         person_head_loc = memory.getData("PeoplePerception/Person/" + str(person_id) + "/PositionInRobotFrame")
@@ -163,7 +163,7 @@ def getObjectLocation(person_gaze, person_location, debug = False):
 
     return [robot_object_x, robot_object_y, robot_object_z, robot_object_yaw, robot_object_pitch]
 
-def showWithOpenCV(nao_image, width = 500, detectFaces = False):
+def showWithOpenCV(nao_image, width = 500, detect_faces = False):
 
     # translate into one opencv can use
     img = (numpy.reshape(numpy.frombuffer(nao_image[6], dtype = '%iuint8' % nao_image[2]), (nao_image[1], nao_image[0], nao_image[2])))
@@ -171,8 +171,8 @@ def showWithOpenCV(nao_image, width = 500, detectFaces = False):
     # resize image with opencv
     img = resize(img, width)
 
-    # if detectFaces argument is set to True
-    if detectFaces:
+    # if detect_faces argument is set to True
+    if detect_faces:
 
         # find faces
         faces = face_cascade.detectMultiScale(gray(img), scale_factor, min_neighbors)
@@ -247,7 +247,7 @@ posture.goToPosture("Crouch", 0.2)
 # stand up in balanced stance
 # posture.goToPosture("StandInit", 0.5)
 
-# set face tracker to use whole body, not just heads
+# set face tracker to use only head, not whole body
 face_tracker.setWholeBodyOn(False)
 
 # start face tracker
@@ -286,7 +286,7 @@ while (cv2.waitKey(1) & 0xFF != ord('q')) and (t1 - t0 < wait):
 
             # if person could be looking at an object
             if personLookingAtObjects(person_gaze):
-                
+
                 object_location = getObjectLocation(person_gaze, person_location, debug = True)
                 print object_location
 
