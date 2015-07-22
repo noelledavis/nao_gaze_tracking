@@ -70,7 +70,7 @@ def getPersonGaze(person_id):
         if len(gaze_dir) == 2 and len(head_angles) == 3:
 
             # print person ID
-            print "Person | ID", person_id
+            # print "Person | ID", person_id
             
             # extract gaze direction and head angles data
             person_eye_yaw = gaze_dir[0]
@@ -84,12 +84,6 @@ def getPersonGaze(person_id):
             # calculate overall gaze values (not in relation to robot's POV)
             person_gaze_yaw = -(person_eye_yaw + person_head_yaw) - robot_head_yaw # person's left is (-), person's right is (+)
             person_gaze_pitch = person_eye_pitch + person_head_pitch - robot_head_pitch + math.pi # all the way up is pi, all the way down is 0
-
-            print "\tRAW PITCH:", rad2deg(person_eye_pitch), rad2deg(person_head_pitch), rad2deg(person_eye_pitch + person_head_pitch)
-
-            # # print overall gaze values
-            # print '\tPerson gaze yaw:', person_gaze_yaw
-            # print '\tPeron gaze pitch:', person_gaze_pitch
 
             # return list of person's gaze yaw and pitch
             return [person_gaze_yaw, person_gaze_pitch]
@@ -130,8 +124,8 @@ def getPersonLocation(person_id):
 
 def personLookingAtObjects(person_gaze):
 
-    # if person is looking lower than straight ahead (gaze pitch < 90 deg)
-    if person_gaze[1] < math.pi / 2:
+    # if person is looking lower than straight ahead (gaze pitch < 80 deg)
+    if person_gaze[1] < deg2rad(80):
         return True
 
     return False
@@ -224,14 +218,15 @@ colorspace = 13
 fps = 10
 
 # set face-tracking time limit
-wait = 180
+wait = 15
 
 # list of object angles and confidences in the form [[angle, confidence], [angle, confidence]]
 object_angles = [-30, -10, -9, 15, 40]
+object_angles = deg2rad(object_angles)
 object_confidences = [0] * len(object_angles)
 
 # set angle error in rad for determining which object(s) person is looking at
-angle_error = 0.2
+object_angle_error = math.pi / 12
 
 # create broker to construct NAOqi module and listen to other modules
 broker = ALBroker("broker",
@@ -294,28 +289,31 @@ while (cv2.waitKey(1) & 0xFF != ord('q')) and (t1 - t0 < wait):
         # get person gaze data
         person_gaze = getPersonGaze(person_id)
 
-        # get person location data
-        person_location = getPersonLocation(person_id)
-
         # if person_gaze isn't "None" object
         if person_gaze:
 
             # if person could be looking at an object
             if personLookingAtObjects(person_gaze):
 
-                gaze_location = getObjectLocation(person_gaze, person_location, debug = True)
-                print gaze_location
+                # get person location data
+                person_location = getPersonLocation(person_id)
+
+                gaze_location = getObjectLocation(person_gaze, person_location)
 
                 gaze_angle = gaze_location[3]
                 
                 # for count and angle of each object
                 for i, object_angle in enumerate(object_angles):
 
-                    # if gaze angle is within angle_error of the object angle on either side
-                    if abs(object_angle - gaze_angle) <= angle_error:
+                    # if gaze angle is within object_angle_error of the object angle on either side
+                    if abs(object_angle - gaze_angle) <= object_angle_error:
                         
                         # add 1 to the confidence for that object
                         object_confidences[i] += 1
+
+                        print "\t", rad2deg(object_angle),
+
+                print
 
     # get image from nao
     nao_image = camera.getImageRemote(video_client)
@@ -323,6 +321,7 @@ while (cv2.waitKey(1) & 0xFF != ord('q')) and (t1 - t0 < wait):
     # display image with opencv
     showWithOpenCV(nao_image)
 
+# print object_confidences
 print object_confidences
 
 # unsubscribe from gaze analysis
