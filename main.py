@@ -1,26 +1,14 @@
 from __future__ import division
 import cv2
-import numpy
 import time
 import math
+import random
+
 from naoqi import ALProxy
 from naoqi import ALModule
 from naoqi import ALBroker
 
-# resize image
-def resize(img, new_width = 500):
-    if(len(img.shape) > 2):
-        h, w, c = img.shape
-    else:
-        h, w = img.shape
-    r = new_width / w
-    dim = (new_width, int(h * r))
-    img = cv2.resize(img, dim, interpolation = cv2.INTER_LINEAR)
-    return img
-
-def gray(img):
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    return gray
+import images
 
 def rad2deg(rad):
     if isinstance(rad, list):
@@ -42,23 +30,33 @@ def deg2rad(deg):
 
     return rad
 
-def getPeopleIDs():
+def getPeopleIDs(debug = False):
+    """ Tries to get people IDs, then if none are retrieved, tries again every 0.5 seconds until it gets some. """
 
-    # get list of IDs of people looking at robot
+    # try to get list of IDs of people looking at robot
     people_ids = memory.getData("GazeAnalysis/PeopleLookingAtRobot")
+    
+    # if robot hasn't gotten any people IDs
+    while people_ids is None or len(people_ids) == 0:
+
+        # wait a little bit
+        time.sleep(0.5)
+
+        # get list of IDs of people looking at robot
+        people_ids = memory.getData("GazeAnalysis/PeopleLookingAtRobot")
+
+    if debug:
+        print "Done! About to return these people IDs:", people_ids
 
     return people_ids
 
-def getPersonGaze(person_id):
-    """ Returns person's gaze as a list of yaw (left -, right +) and pitch (up pi, down 0) in radians, respectively. 
-    Bases angles on person's eye gaze and head angles, and compensates for variable robot head position. """
+def getRawPersonGaze(person_id):
+    """ Returns person's gaze a a list of yaw (left -, right +) and pitch (up pi, down 0) in radians, respectively.
+    Bases gaze on both eye and head angles. Does not compensate for variable robot head position. """
 
-    # extract GazeDirection and HeadAngles values
+    # retrieve GazeDirection and HeadAngles values
     gaze_dir = memory.getData("PeoplePerception/Person/" + str(person_id) + "/GazeDirection")
     head_angles =  memory.getData("PeoplePerception/Person/" + str(person_id) + "/HeadAngles")
-
-    # print person ID
-    # print "Person | ID", person_id
     
     # extract gaze direction and head angles data
     person_eye_yaw = gaze_dir[0]
@@ -67,14 +65,100 @@ def getPersonGaze(person_id):
     person_head_yaw = head_angles[0]
     person_head_pitch = head_angles[1]
 
-    robot_head_yaw, robot_head_pitch = getRobotHeadAngles()
+    # combine eye and head gaze values
+    person_gaze_yaw = -(person_eye_yaw + person_head_yaw) # person's left is (-), person's right is (+)
+    person_gaze_pitch = person_eye_pitch + person_head_pitch + math.pi / 2 # all the way up is pi, all the way down is 0
     
-    # calculate overall gaze values (not in relation to robot's POV)
-    person_gaze_yaw = -(person_eye_yaw + person_head_yaw) - robot_head_yaw # person's left is (-), person's right is (+)
-    person_gaze_pitch = person_eye_pitch + person_head_pitch - robot_head_pitch + math.pi # all the way up is pi, all the way down is 0
-
-    # return list of person's gaze yaw and pitch
     return [person_gaze_yaw, person_gaze_pitch]
+
+def getAveragePitchOverTime(person_id, time_limit):
+    """ Gets average pitch of the person's gaze relative to the robot over the specified amount of time 
+    and only of instances when the pitch is within the range. Will automatically update person ID if needed. """
+
+    pitch_sum = 0
+    pitch_count = 0
+
+    timeout = time.time() + time_limit
+
+    while time.time() < timeout:
+
+            
+        try:
+            # get person gaze data
+            person_gaze = getRawPersonGaze(person_id)
+
+        # if gaze data can't be retrieved for that person ID anymore (e.g. if bot entirely loses track of person)
+        except RuntimeError:
+            print "Couldn't get gaze direction and head angles for that ID"
+            
+            # get new people IDs
+            people_ids = getPeopleIDs()
+            person_id = people_ids[0]
+
+        # if gaze direction or head angles are empty lists (e.g. if person's gaze is too steep)
+        except IndexError:
+            print "Gaze data was empty list"
+
+        else:
+            person_gaze_yaw, person_gaze_pitch = person_gaze
+
+            # if pitch is within the range (i.e. person is looking at robot's head)
+            if abs(person_gaze_yaw - 0) < deg2rad(15) and abs(person_gaze_pitch - deg2rad(90)) < deg2rad(20):
+                pitch_sum += person_gaze_pitch
+                pitch_count += 1
+
+    if pitch_sum == 0:
+        return None
+
+    pitch_avg = pitch_sum / pitch_count
+
+    return pitch_avg
+
+def getPersonGazePitchAdjustment(person_id):
+    """ Returns the adjustment needed to be made to measured gaze pitch values. Gets the person's attention 
+    to record his gaze pitch values during eye contact by speaking. """
+
+    # get person to look directly at eyes
+    tts.post.say("Hi there! My name is Bobby. What's your name?")
+
+    # try to get average pitch of instances where person is looking at robot
+    control_pitch = getAveragePitchOverTime(person_id, 3)
+    time.sleep(1)
+
+    # finish talking
+    tts.say("Nice to meet you!")
+    time.sleep(1)
+
+    # list of stalling phrases to try to get person to look at robot
+    stalls = ["I'm so excited!",
+        "This will be lots of fun!",
+        "I Spy is my favorite game ever.",
+        "I love playing I Spy!",
+        "I am so ready to play!",
+        "We're going to have so much fun playing.",
+        "I Spy is so much fun."]
+
+    # index to iterate through stalling phrases
+    index = 0
+
+    # shuffle stalling phrases
+    random.shuffle(stalls)
+
+    # while control_pitch is None (robot couldn't get average pitch)
+    while control_pitch is None:
+        tts.post.say(stalls[index])
+        control_pitch = getAveragePitchOverTime(person_id, 3)
+        index += 1
+
+        # if we've gone through all the stalls, shuffle them and start over
+        if index == len(stalls):
+            index = 0
+            random.shuffle(stalls)
+
+    # the pitch adjustment we need to make is the difference between (the measured value at 90 degrees) and (90 degrees)
+    person_gaze_pitch_adjustment = control_pitch - deg2rad(90)
+
+    return person_gaze_pitch_adjustment
 
 def getRobotHeadAngles():
 
@@ -83,10 +167,27 @@ def getRobotHeadAngles():
 
     # unpack robot head angles
     robot_head_yaw = robot_head_angles[0] # left (+) and right (-)
-    robot_head_pitch = -robot_head_angles[1] + math.pi / 2 # all the way up (pi) and all the way down (0), see http://doc.aldebaran.com/2-1/family/robots/joints_robot.html
+    robot_head_pitch = -robot_head_angles[1] # all the way up (+) and all the way down (-), see http://doc.aldebaran.com/2-1/family/robots/joints_robot.html
 
-    # return scaled robot head angles
+    # return adjusted robot head angles
     return [robot_head_yaw, robot_head_pitch]
+
+def getPersonGaze(person_id, person_gaze_pitch_adjustment):
+    """ Returns person's gaze as a list of yaw (left -, right +) and pitch (up pi, down 0) in radians, respectively. 
+    Gets gaze from getRawPersonGaze function, then compensates for variable robot head position and measured pitch inaccuracy. """
+
+    person_gaze_yaw, person_gaze_pitch = getRawPersonGaze(person_id)
+
+    robot_head_yaw, robot_head_pitch = getRobotHeadAngles()
+    
+    # compensate for variable robot head angles
+    person_gaze_yaw -= robot_head_yaw # person's left is (-), person's right is (+)
+    person_gaze_pitch -= robot_head_pitch # all the way up is pi, all the way down is 0
+
+    # compensate for measured pitch inaccuracy
+    person_gaze_pitch += person_gaze_pitch_adjustment
+
+    return [person_gaze_yaw, person_gaze_pitch]
 
 def getPersonLocation(person_id):
     """ Returns person's location as a list of x, y (right of robot -, left of robot +), and z coordinates in meters relative to spot between robot's feet """
@@ -128,10 +229,10 @@ def getObjectLocation(person_gaze, person_location, debug = False):
     robot_person_z = person_location[2]
 
     # calculate x distance between robot and object
-    # person_object_x = robot_person_z * math.tan(person_object_pitch)
-    person_object_x = 0.8
-    # robot_object_x = robot_person_x - person_object_x
-    robot_object_x = 0.5
+    person_object_x = robot_person_z * math.tan(person_object_pitch)
+    # person_object_x = 0.8
+    robot_object_x = robot_person_x - person_object_x
+    # robot_object_x = 0.5
 
     # calculate y distance between robot and object (left of robot +, right of robot -)
     person_object_y = person_object_x * math.tan(person_object_yaw)
@@ -151,47 +252,6 @@ def getObjectLocation(person_gaze, person_location, debug = False):
 
     return [robot_object_x, robot_object_y, robot_object_z, robot_object_yaw, robot_object_pitch]
 
-def showWithOpenCV(nao_image, width = 500, detect_faces = False):
-
-    # translate into one opencv can use
-    img = (numpy.reshape(numpy.frombuffer(nao_image[6], dtype = '%iuint8' % nao_image[2]), (nao_image[1], nao_image[0], nao_image[2])))
-    
-    # resize image with opencv
-    img = resize(img, width)
-
-    # if detect_faces argument is set to True
-    if detect_faces:
-
-        # find faces
-        faces = face_cascade.detectMultiScale(gray(img), scale_factor, min_neighbors)
-
-        # for each face found
-        for (x,y,w,h) in faces:
-            # draw rectangle around face
-            cv2.rectangle(img, (x,y), (x+w, y+h), (255, 0, 0), 1)
-            
-            # get crop of top half of face
-            face = img[y:y+h/2, x:x+w]
-
-            # detect eyes in that face
-            eyes = eye_cascade.detectMultiScale(gray(face))
-            
-            # for each eye
-            for (ex,ey,ew,eh) in eyes:
-                # draw rectangle around eye
-                cv2.rectangle(face, (ex, ey), (ex+ew, ey+eh), (0, 255, 0), 1)
-
-    # display marked-up image
-    cv2.imshow('img', img)
-
-# get haar cascades for face and eye detection
-face_cascade = cv2.CascadeClassifier('haar_cascades/haarcascade_frontalface_default.xml')
-eye_cascade = cv2.CascadeClassifier('haar_cascades/haarcascade_eye.xml')
-
-# set face detection tuning arguments
-scale_factor = 1.1
-min_neighbors = 6
-
 # set robot connection values
 IP = 'bobby.local'
 PORT = 9559
@@ -202,10 +262,10 @@ resolution = 2
 colorspace = 13
 fps = 10
 
-# set face-tracking time limit
-wait = 15
+# set game time limit
+max_game_time = 15
 
-# list of object angles and confidences in the form [[angle, confidence], [angle, confidence]]
+# lists of object angles and confidences
 object_angles = [-30, -10, -9, 15, 40]
 object_angles = deg2rad(object_angles)
 object_confidences = [0] * len(object_angles)
@@ -250,65 +310,39 @@ time.sleep(0.5)
 # set face tracker to use only head, not whole body
 face_tracker.setWholeBodyOn(False)
 
-# start face tracker
-face_tracker.startTracker()
-print 'Face tracker successfully started!'
-
 # subscribe to gaze analysis
 gaze.subscribe("_")
 
 # set high tolerance for thinking that person is looking at robot so it's easy to get people IDs
 gaze.setTolerance(1)
 
-# get person to look directly at eyes
-tts.say("Hi there! My name is Bobby. What's your name?")
+# start face tracker
+face_tracker.startTracker()
+print 'Face tracker successfully started!'
 
-# try getting IDs
+# wait a little to let robot find face
+time.sleep(0.5)
+
+# get people IDs
 people_ids = getPeopleIDs()
-print people_ids
-time.sleep(2)
-
-tts.say("Nice to meet you!")
-
-# if people_ids is still None (robot hasn't gotten any IDs)
-if not people_ids:
-
-    # try again to get person to look directly at eyes
-    tts.say("I'm so excited! This will be lots of fun.")
-
-    # try getting IDs
-    people_ids = getPeopleIDs()
-    time.sleep(1)
-
-# if people_ids is still None (robot hasn't gotten any IDs)
-if not people_ids:
-
-    # try again to get person to look directly at eyes
-    tts.say("I love playing I Spy.")
-
-    # try getting IDs
-    people_ids = getPeopleIDs()
-    time.sleep(1)
-
-# finish talking
-tts.say("Let's play I Spy!")
 
 # take ID of first person in list
 person_id = people_ids[0]
 
-# initialize timers
-t0 = time.time()
-t1 = 0
+person_gaze_pitch_adjustment = getPersonGazePitchAdjustment(person_id)
+
+# finish talking
+tts.say("Okay, let's play!")
+
+# set timer
+timeout = time.time() + max_game_time
 
 # while 'q' is not pressed and time limit isn't reached
-while (cv2.waitKey(1) & 0xFF != ord('q')) and (t1 - t0 < wait):
-
-    # get running time
-    t1 = time.time()
+while (cv2.waitKey(1) & 0xFF != ord('q')) and (time.time() < timeout):
 
     try:
         # get person gaze data
-        person_gaze = getPersonGaze(person_id)
+        person_gaze = getPersonGaze(person_id, person_gaze_pitch_adjustment)
 
     # if gaze data can't be retrieved for that person ID anymore (e.g. if bot entirely loses track of person)
     except RuntimeError:
@@ -350,7 +384,7 @@ while (cv2.waitKey(1) & 0xFF != ord('q')) and (t1 - t0 < wait):
     nao_image = camera.getImageRemote(video_client)
 
     # display image with opencv
-    showWithOpenCV(nao_image)
+    images.showWithOpenCV(nao_image)
 
 # print object_confidences
 print object_confidences
