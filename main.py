@@ -53,43 +53,28 @@ def getPersonGaze(person_id):
     """ Returns person's gaze as a list of yaw (left -, right +) and pitch (up pi, down 0) in radians, respectively. 
     Bases angles on person's eye gaze and head angles, and compensates for variable robot head position. """
 
-    # if data exists
-    try:
-        # extract GazeDirection and HeadAngles values
-        gaze_dir = memory.getData("PeoplePerception/Person/" + str(person_id) + "/GazeDirection")
-        head_angles =  memory.getData("PeoplePerception/Person/" + str(person_id) + "/HeadAngles")
+    # extract GazeDirection and HeadAngles values
+    gaze_dir = memory.getData("PeoplePerception/Person/" + str(person_id) + "/GazeDirection")
+    head_angles =  memory.getData("PeoplePerception/Person/" + str(person_id) + "/HeadAngles")
 
-    # if getting gaze direction or head angles values caused an error
-    except RuntimeError:
-        print "Couldn't get gaze direction and head angles"
+    # print person ID
+    # print "Person | ID", person_id
+    
+    # extract gaze direction and head angles data
+    person_eye_yaw = gaze_dir[0]
+    person_eye_pitch = gaze_dir[1]
+    
+    person_head_yaw = head_angles[0]
+    person_head_pitch = head_angles[1]
 
-    # if able to retrieve gaze direction and head angles values
-    else:
+    robot_head_yaw, robot_head_pitch = getRobotHeadAngles()
+    
+    # calculate overall gaze values (not in relation to robot's POV)
+    person_gaze_yaw = -(person_eye_yaw + person_head_yaw) - robot_head_yaw # person's left is (-), person's right is (+)
+    person_gaze_pitch = person_eye_pitch + person_head_pitch - robot_head_pitch + math.pi # all the way up is pi, all the way down is 0
 
-        # if gaze direction and head angles values hold valid data
-        if len(gaze_dir) == 2 and len(head_angles) == 3:
-
-            # print person ID
-            # print "Person | ID", person_id
-            
-            # extract gaze direction and head angles data
-            person_eye_yaw = gaze_dir[0]
-            person_eye_pitch = gaze_dir[1]
-            
-            person_head_yaw = head_angles[0]
-            person_head_pitch = head_angles[1]
-
-            robot_head_yaw, robot_head_pitch = getRobotHeadAngles()
-            
-            # calculate overall gaze values (not in relation to robot's POV)
-            person_gaze_yaw = -(person_eye_yaw + person_head_yaw) - robot_head_yaw # person's left is (-), person's right is (+)
-            person_gaze_pitch = person_eye_pitch + person_head_pitch - robot_head_pitch + math.pi # all the way up is pi, all the way down is 0
-
-            # return list of person's gaze yaw and pitch
-            return [person_gaze_yaw, person_gaze_pitch]
-
-        else:
-            print "GazeDirection and HeadAngles values don't hold valid data"
+    # return list of person's gaze yaw and pitch
+    return [person_gaze_yaw, person_gaze_pitch]
 
 def getRobotHeadAngles():
 
@@ -238,6 +223,7 @@ broker = ALBroker("broker",
 # create proxies
 camera = ALProxy("ALVideoDevice")
 motion = ALProxy("ALMotion")
+tts = ALProxy("ALTextToSpeech")
 face_tracker = ALProxy("ALFaceTracker")
 posture = ALProxy("ALRobotPosture")
 memory = ALProxy("ALMemory")
@@ -255,8 +241,11 @@ motion.setStiffnesses("Body", 1.0)
 # sit down slowly
 posture.goToPosture("Crouch", 0.2)
 
-# stand up in balanced stance
-# posture.goToPosture("StandInit", 0.5)
+# tilt head up to look at person
+motion.setAngles("HeadPitch", deg2rad(-10), 0.2)
+
+# give robot some time to get to this angle before starting face tracker
+time.sleep(0.5)
 
 # set face tracker to use only head, not whole body
 face_tracker.setWholeBodyOn(False)
@@ -268,6 +257,45 @@ print 'Face tracker successfully started!'
 # subscribe to gaze analysis
 gaze.subscribe("_")
 
+# set high tolerance for thinking that person is looking at robot so it's easy to get people IDs
+gaze.setTolerance(1)
+
+# get person to look directly at eyes
+tts.say("Hi there! My name is Bobby. What's your name?")
+
+# try getting IDs
+people_ids = getPeopleIDs()
+print people_ids
+time.sleep(2)
+
+tts.say("Nice to meet you!")
+
+# if people_ids is still None (robot hasn't gotten any IDs)
+if not people_ids:
+
+    # try again to get person to look directly at eyes
+    tts.say("I'm so excited! This will be lots of fun.")
+
+    # try getting IDs
+    people_ids = getPeopleIDs()
+    time.sleep(1)
+
+# if people_ids is still None (robot hasn't gotten any IDs)
+if not people_ids:
+
+    # try again to get person to look directly at eyes
+    tts.say("I love playing I Spy.")
+
+    # try getting IDs
+    people_ids = getPeopleIDs()
+    time.sleep(1)
+
+# finish talking
+tts.say("Let's play I Spy!")
+
+# take ID of first person in list
+person_id = people_ids[0]
+
 # initialize timers
 t0 = time.time()
 t1 = 0
@@ -278,42 +306,45 @@ while (cv2.waitKey(1) & 0xFF != ord('q')) and (t1 - t0 < wait):
     # get running time
     t1 = time.time()
 
-    people_ids = getPeopleIDs()
-
-    # if people_ids isn't "None" object
-    if people_ids:
-
-        # get ID of first person
-        person_id = people_ids[0]
-
+    try:
         # get person gaze data
         person_gaze = getPersonGaze(person_id)
 
-        # if person_gaze isn't "None" object
-        if person_gaze:
+    # if gaze data can't be retrieved for that person ID anymore (e.g. if bot entirely loses track of person)
+    except RuntimeError:
+        print "Couldn't get gaze direction and head angles for that ID"
+        
+        # get new people IDs
+        people_ids = getPeopleIDs()
+        person_id = people_ids[0]
 
-            # if person could be looking at an object
-            if personLookingAtObjects(person_gaze):
+    # if gaze direction or head angles are empty lists (e.g. if person's gaze is too steep)
+    except IndexError:
+        print "Gaze data was empty list"
 
-                # get person location data
-                person_location = getPersonLocation(person_id)
+    else:
+        # if person gaze is near the objects
+        if personLookingAtObjects(person_gaze):
 
-                gaze_location = getObjectLocation(person_gaze, person_location)
+            # get person location data
+            person_location = getPersonLocation(person_id)
 
-                gaze_angle = gaze_location[3]
-                
-                # for count and angle of each object
-                for i, object_angle in enumerate(object_angles):
+            gaze_location = getObjectLocation(person_gaze, person_location)
 
-                    # if gaze angle is within object_angle_error of the object angle on either side
-                    if abs(object_angle - gaze_angle) <= object_angle_error:
-                        
-                        # add 1 to the confidence for that object
-                        object_confidences[i] += 1
+            gaze_angle = gaze_location[3]
+            
+            # for count and angle of each object
+            for i, object_angle in enumerate(object_angles):
 
-                        print "\t", rad2deg(object_angle),
+                # if gaze angle is within object_angle_error of the object angle on either side
+                if abs(object_angle - gaze_angle) <= object_angle_error:
+                    
+                    # add 1 to the confidence for that object
+                    object_confidences[i] += 1
 
-                print
+                    print "\t", rad2deg(object_angle),
+
+            print
 
     # get image from nao
     nao_image = camera.getImageRemote(video_client)
@@ -350,9 +381,9 @@ if not all(confidence == 0 for confidence in object_confidences):
     best_object_indices = [i for i, confidence in enumerate(object_confidences) if confidence == max_confidence]
 
     for i in best_object_indices:
-        print "Are you thinking of object " + str(i) + "?"
+        print "Are you thinking of object " + str(i) + ', the one at ' + str(rad2deg(object_angles[i])) + " degrees?"
         motion.setAngles("HeadYaw", object_angles[i], 0.2)
-        motion.setAngles("HeadPitch", math.pi / 12, 0.2)
+        motion.setAngles("HeadPitch", deg2rad(15), 0.2)
         time.sleep(3)
 
 # sit down slowly
