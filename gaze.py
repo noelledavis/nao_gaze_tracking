@@ -9,20 +9,14 @@ from naoqi import ALBroker
 IP = 'bobby.local'
 PORT = 9559
 
-# create broker to construct NAOqi module and listen to other modules
-broker = ALBroker("broker",
-    "0.0.0.0",  # listen to anyone
-    0,          # find a free port and use it
-    IP,         # parent broker IP
-    PORT)       # parent broker port
+memory = ALProxy("ALMemory", IP, PORT)
+gaze_analysis = ALProxy("ALGazeAnalysis", IP, PORT)
+tts = ALProxy("ALTextToSpeech", IP, PORT)
+motion = ALProxy("ALMotion", IP, PORT)
 
-memory = ALProxy("ALMemory")
-gaze_analysis = ALProxy("ALGazeAnalysis")
-tts = ALProxy("ALTextToSpeech")
-motion = ALProxy("ALMotion")
-
-def getPeopleIDs(debug = False):
-    """ Tries to get people IDs, then if none are retrieved, tries again every 0.5 seconds until it gets some. """
+def getPersonID(debug = False):
+    """ Tries to get people IDs, then if none are retrieved, tries again every 0.5 seconds until it gets some. 
+    Returns first person ID in the list. """
 
     # try to get list of IDs of people looking at robot
     people_ids = memory.getData("GazeAnalysis/PeopleLookingAtRobot")
@@ -37,9 +31,9 @@ def getPeopleIDs(debug = False):
         people_ids = memory.getData("GazeAnalysis/PeopleLookingAtRobot")
 
     if debug:
-        print "Done! About to return these people IDs:", people_ids
+        print "Done! About to return the first of these people IDs:", people_ids
 
-    return people_ids
+    return people_ids[0]
 
 def getRawPersonGaze(person_id):
     """ Returns person's gaze a a list of yaw (left -, right +) and pitch (up pi, down 0) in radians, respectively.
