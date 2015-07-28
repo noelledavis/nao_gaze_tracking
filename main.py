@@ -8,8 +8,8 @@ from naoqi import ALProxy
 from naoqi import ALBroker
 
 import gaze
-import display
 from confidence import Confidence
+from video import Video
 
 # set robot connection values
 IP = 'bobby.local'
@@ -70,40 +70,22 @@ tts.say("Okay, let's play!")
 timeout = time.time() + max_game_time
 
 # while 'q' is not pressed and time limit isn't reached
-while (cv2.waitKey(1) & 0xFF != ord('q')) and (time.time() < timeout):
+while time.time() < timeout:
 
-    try:
-        # get person gaze data
-        person_gaze = gaze.getPersonGaze(person_id, person_gaze_pitch_adjustment)
+    person_gaze = gaze.getPersonGaze(person_id, person_gaze_pitch_adjustment)
 
-    # if gaze data can't be retrieved for that person ID anymore (e.g. if bot entirely loses track of person)
-    except RuntimeError:
-        # print "Couldn't get gaze direction and head angles for that ID"
-        
-        # get new people IDs
-        person_id = gaze.getPersonID()
+    if not person_gaze is None:
 
-    # if gaze direction or head angles are empty lists (e.g. if person's gaze is too steep)
-    except IndexError:
-        # print "Gaze data was empty list"
-        pass
-
-    else:
-        # get person location data
         person_location = gaze.getPersonLocation(person_id)
         
-        # if person gaze is near the objects
+        # if person's gaze is near the objects
         if gaze.personLookingAtObjects(person_gaze, person_location):
 
-            gaze_location = gaze.getObjectLocation(person_gaze, person_location, debug = True)
+            gaze_location = gaze.getObjectLocation(person_gaze, person_location, debug = False)
             print gaze_location
 
             gaze_angle = gaze_location[3]
-
             confidences.update(gaze_angle, debug = True)
-
-    # get image from nao and display
-    video.show()
 
 # unsubscribe from gaze analysis
 gaze_analysis.unsubscribe("_")
@@ -112,7 +94,6 @@ gaze_analysis.unsubscribe("_")
 face_tracker.stopTracker()
 print "Face tracker stopped."
 
-display.close()
 confidences.normalize()
 confidences.guess()
 

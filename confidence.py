@@ -1,3 +1,4 @@
+from __future__ import division
 import math
 import time
 
@@ -11,7 +12,7 @@ class Confidence(object):
 		IP = 'bobby.local'
 		PORT = 9559
 
-		motion = ALProxy("ALMotion", IP, PORT)
+		self.motion = ALProxy("ALMotion", IP, PORT)
 
 		# angles and confidences are stored as {angle: confidence}
 		self.confidences = dict.fromkeys([math.radians(angle) for angle in object_angles], 0)
@@ -20,42 +21,48 @@ class Confidence(object):
 
 	def update(self, gaze_angle, debug = False):
 
-        for object_angle in self.confidences:
+		for object_angle in self.confidences:
 
-            # if gaze angle is within object_angle_error of the object angle on either side
-            if abs(object_angle - gaze_angle) <= self.angle_error:
-                
-                # add 1 to the confidence for that object
-                self.confidences[object_angle] += 1
+			print round(object_angle, 2), "-", round(gaze_angle, 2), "<=", round(self.angle_error, 2), '\t', abs(object_angle - gaze_angle) <= self.angle_error
 
-                if debug:
-                	print "\t", math.degrees(object_angle),
+			# if gaze angle is within object_angle_error of the object angle on either side
+			if abs(object_angle - gaze_angle) <= self.angle_error:
+				
+				# add 1 to the confidence for that object
+				self.confidences[object_angle] += 1
 
-        if debug:
-        	print
+				if debug:
+					print "\t", math.degrees(object_angle),
 
-    def normalize(self):
+		if debug:
+			print
 
-    	confidence_sum = sum(self.confidences)
+	def normalize(self):
 
-    	# if we at least got some data
-    	if confidence_sum != 0:
+		confidence_sum = sum(self.confidences.values())
 
-	    	for angle in self.confidences:
-	    		self.confidences[angle] /= confidence_sum
+		print "confidences", self.confidences.values()
+
+		# if we at least got some data
+		if confidence_sum != 0:
+
+			for angle in self.confidences:
+				self.confidences[angle] /= confidence_sum
 
 	def guess(self):
 
-	    print "Object confidences:", self.confidences
+		print "Object confidences:", self.confidences
 
-	    max_confidence = max(self.confidences.values()) # or set this to some threshold
-        
-        motion.setAngles("HeadPitch", math.radians(15), 0.2)
+		max_confidence = max(self.confidences.values()) # or set this to some threshold
+		print "max_confidence:", max_confidence
+		
+		self.motion.setAngles("HeadPitch", math.radians(15), 0.2)
 
-	    for angle, confidence in self.confidences.iteritems():
+		for angle, confidence in self.confidences.iteritems():
 
-	    	# if we're most confident about that object
-	    	if confidence == max_confidence:
-	    		print "Are you thinking of the object at", math.degrees(angle), "degrees?"
-	        	motion.setAngles("HeadYaw", angle, 0.2)
-	        	time.sleep(3)
+			# if we're most confident about that object
+			if confidence == max_confidence:
+				print "Are you thinking of the object at", math.degrees(angle), "degrees?"
+				print "I'm", confidence * 100, "% confident about this."
+				self.motion.setAngles("HeadYaw", angle, 0.2)
+				time.sleep(3)

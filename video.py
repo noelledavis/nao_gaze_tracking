@@ -2,13 +2,15 @@ from __future__ import division
 import cv2
 import numpy
 
+from naoqi import ALProxy
+
 class Video(object):
 
     def __init__(self):
         IP = 'bobby.local'
         PORT = 9559
 
-        camera = ALProxy("ALVideoDevice", IP, PORT)
+        self.camera = ALProxy("ALVideoDevice", IP, PORT)
 
         # set nao camera values
         cam_num = 0
@@ -17,20 +19,20 @@ class Video(object):
         fps = 10
         
         # set brightness to default
-        camera.setCameraParameterToDefault("python_client", 0)
+        self.camera.setCameraParameterToDefault("python_client", 0)
 
         # subscribe to camera
-        video_client = camera.subscribeCamera("python_client", cam_num, resolution, colorspace, fps)
+        self.video_client = self.camera.subscribeCamera("python_client", cam_num, resolution, colorspace, fps)
 
         # load haar cascades for face and eye detection
-        face_cascade = cv2.CascadeClassifier('haar_cascades/haarcascade_frontalface_default.xml')
-        eye_cascade = cv2.CascadeClassifier('haar_cascades/haarcascade_eye.xml')
+        self.face_cascade = cv2.CascadeClassifier('haar_cascades/haarcascade_frontalface_default.xml')
+        self.eye_cascade = cv2.CascadeClassifier('haar_cascades/haarcascade_eye.xml')
 
         # set face detection tuning arguments
-        scale_factor = 1.1
-        min_neighbors = 6
+        self.scale_factor = 1.1
+        self.min_neighbors = 6
 
-    def resize(img, new_width = 500):
+    def resize(self, img, new_width = 500):
         """ Resizes either grayscale or color image to specified width. """
 
         if(len(img.shape) > 2):
@@ -42,28 +44,28 @@ class Video(object):
         img = cv2.resize(img, dim, interpolation = cv2.INTER_LINEAR)
         return img
 
-    def gray(img):
+    def gray(self, img):
         """ Returns grayscale version of image. """
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         return gray
 
-    def show(nao_image, width = 500, detect_faces = False):
+    def show(self, width = 500, detect_faces = False):
         """ Gets NAO image, converts to Numpy array, and shows with OpenCV. Has option of detecting and indicating faces in image. """
 
-        nao_image = camera.getImageRemote(video_client)
+        nao_image = self.camera.getImageRemote(self.video_client)
 
         # translate into one opencv can use
         img = (numpy.reshape(numpy.frombuffer(nao_image[6], dtype = '%iuint8' % nao_image[2]), (nao_image[1], nao_image[0], nao_image[2])))
         
         # resize image with opencv
-        img = resize(img, width)
+        img = self.resize(img, width)
 
         # if detect_faces argument is set to True
         if detect_faces:
 
             # find faces
-            faces = face_cascade.detectMultiScale(gray(img), scale_factor, min_neighbors)
+            faces = self.face_cascade.detectMultiScale(self.gray(img), self.scale_factor, self.min_neighbors)
 
             # for each face found
             for (x,y,w,h) in faces:
@@ -74,7 +76,7 @@ class Video(object):
                 face = img[y:y+h/2, x:x+w]
 
                 # detect eyes in that face
-                eyes = eye_cascade.detectMultiScale(gray(face))
+                eyes = self.eye_cascade.detectMultiScale(self.gray(face))
                 
                 # for each eye
                 for (ex,ey,ew,eh) in eyes:
@@ -84,8 +86,8 @@ class Video(object):
         # display marked-up image
         cv2.imshow('img', img)
 
-    def close():
+    def close(self):
         """ Unsubscribes from NAO camera and closes OpenCV windows. """
 
-        camera.unsubscribe(video_client)
+        self.camera.unsubscribe(self.video_client)
         cv2.destroyAllWindows()
