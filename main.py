@@ -7,19 +7,11 @@ import random
 from naoqi import ALProxy
 from naoqi import ALBroker
 
+import robot
 from gaze import Gaze
 from confidence import Confidence
 
-# set robot connection values
-IP = 'bobby.local'
-PORT = 9559
-
-# create broker to construct NAOqi module and listen to other modules
-broker = ALBroker("broker",
-	"0.0.0.0",  # listen to anyone
-	0,		  # find a free port and use it
-	IP,		 # parent broker IP
-	PORT)	   # parent broker port
+robot.connect()
 
 # create proxies
 motion = ALProxy("ALMotion")

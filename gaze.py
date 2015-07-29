@@ -1,26 +1,12 @@
 import time
 import math
 import random
-
-from naoqi import ALProxy
+from robot import robot
 
 class Gaze(object):
 
     def __init__(self):
-        # set robot connection values
-        IP = 'bobby.local'
-        PORT = 9559
-
-        self.memory = ALProxy("ALMemory", IP, PORT)
-        self.gaze_analysis = ALProxy("ALGazeAnalysis", IP, PORT)
-        self.tts = ALProxy("ALTextToSpeech", IP, PORT)
-        self.motion = ALProxy("ALMotion", IP, PORT)
-
-        # subscribe to gaze analysis
-        self.gaze_analysis.subscribe("_")
-        self.gaze_analysis.setTolerance(1)
-
-        self.updatePersonID()
+        robot().subscribeGaze()
 
     def updatePersonID(self, debug = False):
         """
@@ -29,58 +15,30 @@ class Gaze(object):
         """
 
         # try to get list of IDs of people looking at robot
-        people_ids = self.memory.getData("GazeAnalysis/PeopleLookingAtRobot")
+        people_ids = robot().getPeopleIDs()
         
         # if robot hasn't gotten any people IDs
-        while people_ids is None or len(people_ids) == 0:
+        while people_ids is None:
 
-            # wait a little bit
+            # wait a little bit, then try again
             time.sleep(0.5)
-
-            # get list of IDs of people looking at robot
-            people_ids = self.memory.getData("GazeAnalysis/PeopleLookingAtRobot")
+            people_ids = robot().getPeopleIDs()
 
         if debug:
             print "Done! About to save the first of these people IDs:", people_ids
 
         self.person_id = people_ids[0]
 
-    def updateRawPersonGaze(self):
+    def updateRawPersonGaze():
         """
-        Stores person's gaze a a list of yaw (left -, right +) and pitch (up pi, down 0) in radians, respectively.
+        Stores person's gaze as a list of yaw (left -, right +) and pitch (up pi, down 0) in radians, respectively.
         Bases gaze on both eye and head angles. Does not compensate for variable robot head position.
         """
+        
+        self.raw_person_gaze = robot().getRawPersonGaze(self.person_id)
 
-        try:
-            # retrieve GazeDirection and HeadAngles values
-            gaze_dir = self.memory.getData("PeoplePerception/Person/" + str(self.person_id) + "/GazeDirection")
-            head_angles =  self.memory.getData("PeoplePerception/Person/" + str(self.person_id) + "/HeadAngles")
-            
-            # extract gaze direction and head angles data
-            person_eye_yaw = gaze_dir[0]
-            person_eye_pitch = gaze_dir[1]
-            
-            person_head_yaw = head_angles[0]
-            person_head_pitch = head_angles[1]
-
-        # if gaze data can't be retrieved for that person ID anymore (e.g. if bot entirely loses track of person)
-        except RuntimeError:
-            # print "Couldn't get gaze direction and head angles for that ID"
-            self.raw_person_gaze = None
+        if self.raw_person_gaze is None:
             self.updatePersonID()
-
-        # if gaze direction or head angles are empty lists (e.g. if person's gaze is too steep)
-        except IndexError:
-            # print "Gaze data was empty list"
-            self.raw_person_gaze = None
-            self.updatePersonID()
-
-        else:
-            # combine eye and head gaze values
-            self.raw_person_gaze_yaw = -(person_eye_yaw + person_head_yaw) # person's left is (-), person's right is (+)
-            self.raw_person_gaze_pitch = person_eye_pitch + person_head_pitch + math.pi / 2 # all the way up is pi, all the way down is 0
-
-            self.raw_person_gaze = [self.raw_person_gaze_yaw, self.raw_person_gaze_pitch]
 
     def gazeOnRobot(self):
         """
@@ -88,39 +46,52 @@ class Gaze(object):
         Bases this off of the last cached raw gaze values.
         """
 
+        if self.raw_person_gaze is None:
+            return False
+
         yaw_in_range = abs(self.raw_person_gaze_yaw - 0) < math.radians(15)
         pitch_in_range = abs(self.raw_person_gaze_pitch - math.radians(90)) < math.radians(20)
         return (yaw_in_range and pitch_in_range)
 
     def pitchSumOverTime(self, duration):
+        """
+        Adds pitch value to a sum every time person looks at robot during the given duration.
+        Both this sum and the number of times the sum was added to are member variables.
+        """
 
         timeout = time.time() + duration
         while time.time() < timeout:
             self.updateRawPersonGaze()
 
-            if not self.raw_person_gaze is None:
-                if self.gazeOnRobot():
-                    # add current pitch to pitch sum
-                    self.pitch_sum += self.raw_person_gaze_pitch
-                    self.pitch_count += 1
+            if self.gazeOnRobot():
+                # add current pitch to pitch sum
+                self.pitch_sum += self.raw_person_gaze_pitch
+                self.pitch_count += 1
+
+
+
+# ----------- START EDITING HERE  ----------- #
+
 
 
     def findPersonPitchAdjustment(self):
         """
-        Stores the adjustment needed to be made to measured gaze pitch values based on the difference 
-        between 90 deg and an average measurement when the person is looking straight at the robot.
+        Stores the adjustment needed to be made to measured gaze pitch values, which it calculates based on the 
+        difference between 90 deg and an average measurement of the person's gaze when looking at the robot's eyes.
         Robot speaks to get straight-on gaze to measure, then filters measurements with gazeOnRobot().
         """
 
         self.pitch_sum = 0
         self.pitch_count = 0
 
+        self.updatePersonID()
+
         # get person to look directly at eyes
-        self.tts.post.say("Hi there! My name is Bobby. What's your name?")
+        robot().say("Hi there! My name is Bobby. What's your name?", block = False)
         self.pitchSumOverTime(4)
 
         # finish talking
-        self.tts.post.say("Nice to meet you!")
+        robot().say("Nice to meet you!")
         self.pitchSumOverTime(3)
 
         # list of stalling phrases to try to get person to look at robot
@@ -235,7 +206,7 @@ class Gaze(object):
 
     def getObjectLocation(self, debug = False):
         """
-        Returns object location relative to spot between robot's feet as a list of x, y, z in meters and yaw, pitch in radians.
+        Returns location of gaze relative to spot between robot's feet as a list of x, y, z in meters and yaw, pitch in radians.
         If the person is not looking near the objects, returns None.
         """
 
