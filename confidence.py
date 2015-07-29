@@ -15,7 +15,8 @@ class Confidence(object):
 		self.motion = ALProxy("ALMotion", IP, PORT)
 
 		# angles and confidences are stored as {angle: confidence}
-		self.confidences = dict.fromkeys([math.radians(angle) for angle in object_angles], 0)
+		# self.confidences = dict.fromkeys([math.radians(angle) for angle in object_angles], 0)
+		self.confidences = dict.fromkeys(object_angles, 0)
 
 		self.angle_error = angle_error
 
@@ -23,7 +24,7 @@ class Confidence(object):
 
 		for object_angle in self.confidences:
 
-			print round(object_angle, 2), "-", round(gaze_angle, 2), "<=", round(self.angle_error, 2), '\t', abs(object_angle - gaze_angle) <= self.angle_error
+			# print round(object_angle, 2), "-", round(gaze_angle, 2), "<=", round(self.angle_error, 2), '\t', abs(object_angle - gaze_angle) <= self.angle_error
 
 			# if gaze angle is within object_angle_error of the object angle on either side
 			if abs(object_angle - gaze_angle) <= self.angle_error:
@@ -41,7 +42,7 @@ class Confidence(object):
 
 		confidence_sum = sum(self.confidences.values())
 
-		print "confidences", self.confidences.values()
+		print "count:", self.confidences.values()
 
 		# if we at least got some data
 		if confidence_sum != 0:
@@ -51,10 +52,9 @@ class Confidence(object):
 
 	def guess(self):
 
-		print "Object confidences:", self.confidences
+		print "Object confidences:", [[round(angle, 3), round(self.confidences[angle] * 100)] for angle in self.confidences]
 
 		max_confidence = max(self.confidences.values()) # or set this to some threshold
-		print "max_confidence:", max_confidence
 		
 		self.motion.setAngles("HeadPitch", math.radians(15), 0.2)
 
@@ -62,7 +62,7 @@ class Confidence(object):
 
 			# if we're most confident about that object
 			if confidence == max_confidence:
-				print "Are you thinking of the object at", math.degrees(angle), "degrees?"
-				print "I'm", confidence * 100, "% confident about this."
+				print "Are you thinking of the object at", angle, "radians?"
+				print "I'm", round(confidence * 100), "% confident about this."
 				self.motion.setAngles("HeadYaw", angle, 0.2)
 				time.sleep(3)
