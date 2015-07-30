@@ -10,7 +10,7 @@ from gaze import Gaze
 robot.connect()
 
 # set game time limit
-max_game_time = 15
+game_time = 20
 
 # get into starting position (sitting down, looking up towards person)
 robot.robot().wake()
@@ -30,7 +30,7 @@ gaze = Gaze()
 gaze.findPersonPitchAdjustment()
 
 # set timer
-timeout = time.time() + max_game_time
+timeout = time.time() + game_time
 
 # while the time limit isn't reached
 while time.time() < timeout:

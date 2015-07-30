@@ -9,8 +9,8 @@ class Gaze(object):
     def __init__(self):
 
         # read object angles from file
-        self.object_yaws = []
-        self.object_pitches = []
+        object_yaws = []
+        object_pitches = []
 
         object_angle_file = open("object_angles.txt")
         for object_angle in object_angle_file:
@@ -45,7 +45,7 @@ class Gaze(object):
 
         self.person_id = people_ids[0]
 
-    def updateRawPersonGaze():
+    def updateRawPersonGaze(self):
         """
         Stores person's gaze as a list of yaw (left -, right +) and pitch (up pi, down 0) in radians, respectively.
         Bases gaze on both eye and head angles. Does not compensate for variable robot head position.
@@ -55,6 +55,9 @@ class Gaze(object):
 
         if self.raw_person_gaze is None:
             self.updatePersonID()
+
+        else:
+            self.raw_person_gaze_yaw, self.raw_person_gaze_pitch = self.raw_person_gaze
 
     def gazeOnRobot(self):
         """
@@ -165,13 +168,13 @@ class Gaze(object):
         in meters relative to spot between robot's feet.
         """
         
-        person_location = robot().getPersonLocation(self.person_id)
+        self.person_location = robot().getPersonLocation(self.person_id)
 
-        if person_location is None:
+        if self.person_location is None:
             self.updatePersonID()
 
         else:
-            self.robot_person_x, self.robot_person_y, self.robot_person_z = person_location
+            self.robot_person_x, self.robot_person_y, self.robot_person_z = self.person_location
 
     def personLookingAtObjects(self):
         """
@@ -204,7 +207,7 @@ class Gaze(object):
         """
 
         if not self.personLookingAtObjects():
-            return None
+            self.gaze_object_location = None
 
         # calculate x distance between robot and object
         person_object_x = self.robot_person_z * math.tan(self.person_gaze_pitch)
@@ -226,7 +229,7 @@ class Gaze(object):
             print "\tpers obj x", person_object_x
             print "\tpers obj y", person_object_y
 
-        # return [robot_object_x, robot_object_y, robot_object_z, self.robot_object_yaw, self.robot_object_pitch]
+        self.gaze_object_location = [robot_object_x, robot_object_y, robot_object_z, self.robot_object_yaw, self.robot_object_pitch]
 
     def updateConfidences(self, debug = False):
         """
@@ -234,7 +237,7 @@ class Gaze(object):
         These counts are stored in dictionary self.confidences as {object angle: confidence, ..., object angle: confidence}.
         """
 
-        if not self.robot_object_yaw is None:
+        if not self.gaze_object_location is None:
 
             for object_angle in self.confidences:
                 
@@ -255,6 +258,8 @@ class Gaze(object):
         Divides the confidence (gaze count) for each object by the sum of all objects' gaze counts,
         so that the confidences sum to 100%.
         """
+
+        print "Object counts:", [[round(angle, 3), self.confidences[angle]] for angle in self.confidences]
 
         confidence_sum = sum(self.confidences.values())
 
