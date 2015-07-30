@@ -1,3 +1,4 @@
+from __future__ import division
 import time
 import math
 import random
@@ -6,6 +7,21 @@ from robot import robot
 class Gaze(object):
 
     def __init__(self):
+
+        # read object angles from file
+        self.object_yaws = []
+        self.object_pitches = []
+
+        object_angle_file = open("object_angles.txt")
+        for object_angle in object_angle_file:
+            yaw, pitch = object_angle.split(', ')
+            object_yaws.append(float(yaw))
+            object_pitches.append(float(pitch))
+
+        self.confidences = dict.fromkeys(object_yaws, 0)
+        self.angle_error = math.radians(15)
+
+        # start writing gaze data to robot memory
         robot().subscribeGaze()
 
     def updatePersonID(self, debug = False):
@@ -68,12 +84,6 @@ class Gaze(object):
                 self.pitch_sum += self.raw_person_gaze_pitch
                 self.pitch_count += 1
 
-
-
-# ----------- START EDITING HERE  ----------- #
-
-
-
     def findPersonPitchAdjustment(self):
         """
         Stores the adjustment needed to be made to measured gaze pitch values, which it calculates based on the 
@@ -87,11 +97,11 @@ class Gaze(object):
         self.updatePersonID()
 
         # get person to look directly at eyes
-        robot().say("Hi there! My name is Bobby. What's your name?", block = False)
+        robot().say("Hi there! My name is Bobby. What's your name?", block=False)
         self.pitchSumOverTime(4)
 
         # finish talking
-        robot().say("Nice to meet you!")
+        robot().say("Nice to meet you!", block=False)
         self.pitchSumOverTime(3)
 
         # list of stalling phrases to try to get person to look at robot
@@ -110,7 +120,7 @@ class Gaze(object):
 
             for stall in stalls:
 
-                self.tts.post.say(stall)
+                robot().say(stall, block=False)
                 self.pitchSumOverTime(4)
 
                 if self.pitch_count >= 20:
@@ -124,21 +134,7 @@ class Gaze(object):
         print "person_pitch_adjustment:", self.person_pitch_adjustment
 
         # finish talking
-        self.tts.say("Okay, let's play!")
-
-    def getRobotHeadAngles(self):
-        """
-        Returns current robot head angles as a list of yaw, pitch.
-        For yaw, from the robot's POV, left is positive and right is negative. For pitch, up is positive and down is negative.
-        See http://doc.aldebaran.com/2-1/family/robots/joints_robot.html for info on the range of its yaw and pitch.
-        """
-
-        robot_head_angles = self.motion.getAngles("Head", False)
-        robot_head_yaw = robot_head_angles[0]
-        robot_head_pitch = -robot_head_angles[1]
-
-        # return adjusted robot head angles
-        return [robot_head_yaw, robot_head_pitch]
+        robot().say("Okay, let's play!")
 
     def updatePersonGaze(self):
         """
@@ -152,7 +148,7 @@ class Gaze(object):
            self.person_gaze = None
 
         else:   
-            robot_head_yaw, robot_head_pitch = self.getRobotHeadAngles()
+            robot_head_yaw, robot_head_pitch = robot().getHeadAngles()
             
             # compensate for variable robot head angles
             self.person_gaze_yaw = self.raw_person_gaze_yaw - robot_head_yaw # person's left is (-), person's right is (+)
@@ -169,33 +165,30 @@ class Gaze(object):
         in meters relative to spot between robot's feet.
         """
         
-        try:
-            self.person_location = self.memory.getData("PeoplePerception/Person/" + str(self.person_id) + "/PositionInRobotFrame")
+        person_location = robot().getPersonLocation(self.person_id)
 
-        except RuntimeError:
-            # print "Couldn't get person's face location"
-            self.person_location = None
+        if person_location is None:
             self.updatePersonID()
 
         else:
-            self.robot_person_x, self.robot_person_y, self.robot_person_z = self.person_location
+            self.robot_person_x, self.robot_person_y, self.robot_person_z = person_location
 
     def personLookingAtObjects(self):
         """
         Returns whether the person is looking lower than the robot's feet.
         """
 
-        # make sure we have gaze data
+        # update and check gaze data
+        self.updatePersonGaze()
         if self.person_gaze is None:
             return False
 
-        # make sure we have location data
+        # update and check location data
         self.updatePersonLocation()
-
         if self.person_location is None:
             return False
 
-        # threshold angle equals atan of x distance between person + robot over person's height
+        # threshold angle equals atan of x distance between person + robot divided by person's height
         threshold_angle = math.atan(self.robot_person_x / self.robot_person_z)
 
         # if person is looking in the area of the objects (gaze pitch < angle to look at robot's feet)
@@ -209,8 +202,6 @@ class Gaze(object):
         Returns location of gaze relative to spot between robot's feet as a list of x, y, z in meters and yaw, pitch in radians.
         If the person is not looking near the objects, returns None.
         """
-
-        self.updatePersonGaze()
 
         if not self.personLookingAtObjects():
             return None
@@ -231,12 +222,62 @@ class Gaze(object):
 
         if debug:
             print "\tperson gaze:", [math.degrees(angle) for angle in self.person_gaze]
-            print "\tperson loc:", person_location
+            print "\tperson loc:", self.person_location
             print "\tpers obj x", person_object_x
             print "\tpers obj y", person_object_y
 
         return [robot_object_x, robot_object_y, robot_object_z, self.robot_object_yaw, self.robot_object_pitch]
 
-    def stop(self):
-        # unsubscribe from gaze analysis
-        self.gaze_analysis.unsubscribe("_")
+    def updateConfidences(self, debug = False):
+        """
+        Determines which object(s) the person is gazing at and adds to the count for those objects.
+        These counts are stored in dictionary self.confidences as {object angle: confidence, ..., object angle: confidence}.
+        """
+
+        if not self.robot_object_yaw is None:
+
+            for object_angle in self.confidences:
+                
+                # if gaze angle is within object_angle_error of the object angle on either side
+                if abs(object_angle - self.robot_object_yaw) <= self.angle_error:
+                    
+                    # add 1 to the confidence for that object
+                    self.confidences[object_angle] += 1
+
+                    if debug:
+                        print "\t", math.degrees(object_angle),
+
+            if debug:
+                print
+
+    def normalizeConfidences(self):
+        """
+        Divides the confidence (gaze count) for each object by the sum of all objects' gaze counts,
+        so that the confidences sum to 100%.
+        """
+
+        confidence_sum = sum(self.confidences.values())
+
+        # if we at least got some data
+        if confidence_sum != 0:
+
+            for object_angle in self.confidences:
+                self.confidences[object_angle] /= confidence_sum
+
+    def guess(self):
+
+        print "Object confidences:", [[round(angle, 3), round(self.confidences[angle] * 100)] for angle in self.confidences]
+
+        max_confidence = max(self.confidences.values()) # or set this to some threshold
+        
+        # tilt head slightly down so it appears we're looking at the objects
+        robot().turnHead(pitch = math.radians(15))
+
+        for object_angle, confidence in self.confidences.iteritems():
+
+            # if we're most confident about that object
+            if confidence == max_confidence:
+                print "Are you thinking of the object at", object_angle, "radians?"
+                print "I'm", round(confidence * 100), "% confident about this."
+                robot().turnHead(yaw = object_angle)
+                time.sleep(3)
