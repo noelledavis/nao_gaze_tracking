@@ -5,3 +5,5 @@ Calculates position of the object of a person's gaze with a NAO robot
 2. Retrieves gaze data calculated with built-in algorithms.
 3. Retrieves location of person's head relative to the robot.
 4. Uses this data to calculate location of the object of the person's gaze relative to the robot.
+5. Counts number of times person looks at each object, whose angles are given.
+6. Calculates percent of time spent looking at each object.
