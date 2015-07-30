@@ -197,9 +197,9 @@ class Gaze(object):
 
         return False
 
-    def getObjectLocation(self, debug = False):
+    def updateGazeObjectLocation(self, debug = False):
         """
-        Returns location of gaze relative to spot between robot's feet as a list of x, y, z in meters and yaw, pitch in radians.
+        Stores location of gaze relative to spot between robot's feet as a list of x, y, z in meters and yaw, pitch in radians.
         If the person is not looking near the objects, returns None.
         """
 
@@ -226,7 +226,7 @@ class Gaze(object):
             print "\tpers obj x", person_object_x
             print "\tpers obj y", person_object_y
 
-        return [robot_object_x, robot_object_y, robot_object_z, self.robot_object_yaw, self.robot_object_pitch]
+        # return [robot_object_x, robot_object_y, robot_object_z, self.robot_object_yaw, self.robot_object_pitch]
 
     def updateConfidences(self, debug = False):
         """
@@ -281,3 +281,14 @@ class Gaze(object):
                 print "I'm", round(confidence * 100), "% confident about this."
                 robot().turnHead(yaw = object_angle)
                 time.sleep(3)
+
+    def track(self):
+
+        self.updateGazeObjectLocation()
+        self.updateConfidences()
+
+    def analyze(self):
+
+        robot().unsubscribeGaze()
+        self.normalizeConfidences()
+        self.guess()
