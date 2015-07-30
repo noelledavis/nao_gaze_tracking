@@ -43,4 +43,4 @@ Temporary Items
 .apdisk
 
 # Compiled python files
-.pyc
+*.pyc
