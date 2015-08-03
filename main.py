@@ -10,7 +10,7 @@ from gaze import Gaze
 robot.connect()
 
 # set game time limit
-game_time = 20
+game_time = 10
 
 # get into starting position (sitting down, looking up towards person)
 robot.robot().wake()

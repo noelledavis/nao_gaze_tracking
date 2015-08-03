@@ -265,35 +265,7 @@ class Robot(ALModule):
 		Turns eye LEDs white.
 		"""
 
-		self.leds.on("FaceLeds")
-
-	def repeatUntilReply(self, phrase, pause):
-		"""
-		Repeats the given phrase at intervals of the given pause time until a new sound (possibly the person's reply) is detected.
-		"""
-
-		self.sound.subscribe("sound_detection_client")
-		sound_detected = False
-
-		while not sound_detected:
-			# speak
-			self.say(phrase, block = False)
-
-			# set the timer for the pause time
-			timeout = time.time() + pause
-
-			# check for new sounds every 0.2 seconds
-			while time.time() < timeout:
-				time.sleep(0.1)
-
-				sound = self.mem.getData("SoundDetected")
-				print sound[0]
-				time.sleep(0.1)
-				if (not sound is None) and (sound[0][1] == 1):
-						sound_detected = True
-						break
-
-		self.sound.unsubscribe("sound_detection_client")
+		self.leds.on("FaceLeds")		
 
 	def trackFace(self):
 		"""

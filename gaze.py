@@ -106,17 +106,20 @@ class Gaze(object):
         robot().colorEyes("blue")
 
         # repeatedly try get person's attention until they reply
-        robot().repeatUntilReply("Hey " + person_name + "?", 10)
-        self.pitchSumOverTime(1)
+        robot().say("Hey " + person_name + "?", block = False)
 
-        robot().colorEyes("green")
-        time.sleep(2)
+        self.updateRawPersonGaze()
+
+        while not self.personLookingAtRobot():
+            self.updateRawPersonGaze()
+            time.sleep(0.2)
+        self.pitchSumOverTime(1)
 
         # finish talking and add to pitch sum while talking
         robot().say("Are you ready to play?", block = False)
         self.pitchSumOverTime(1)
 
-        robot().colorEyes("pink")
+        robot().colorEyes("purple")
 
         control_pitch = self.pitch_sum / self.pitch_count
 
