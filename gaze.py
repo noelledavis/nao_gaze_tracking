@@ -59,7 +59,7 @@ class Gaze(object):
         else:
             self.raw_person_gaze_yaw, self.raw_person_gaze_pitch = self.raw_person_gaze
 
-    def gazeOnRobot(self):
+    def personLookingAtRobot(self):
         """
         Determines whether the person is looking in the general area of the robot's head.
         Bases this off of the last cached raw gaze values.
@@ -82,16 +82,16 @@ class Gaze(object):
         while time.time() < timeout:
             self.updateRawPersonGaze()
 
-            if self.gazeOnRobot():
+            if self.personLookingAtRobot():
                 # add current pitch to pitch sum
                 self.pitch_sum += self.raw_person_gaze_pitch
                 self.pitch_count += 1
 
-    def findPersonPitchAdjustment(self):
+    def findPersonPitchAdjustment(self, person_name = "Person", style = "normal"):
         """
         Stores the adjustment needed to be made to measured gaze pitch values, which it calculates based on the 
         difference between 90 deg and an average measurement of the person's gaze when looking at the robot's eyes.
-        Robot speaks to get straight-on gaze to measure, then filters measurements with gazeOnRobot().
+        Robot speaks to get straight-on gaze to measure, then filters measurements with personLookingAtRobot().
         """
 
         self.pitch_sum = 0
@@ -99,35 +99,24 @@ class Gaze(object):
 
         self.updatePersonID()
 
-        # get person to look directly at eyes
-        robot().say("Hi there! My name is Bobby. What's your name?", block=False)
-        self.pitchSumOverTime(4)
+        eye_contact = False
 
-        # finish talking
-        robot().say("Nice to meet you!", block=False)
-        self.pitchSumOverTime(3)
+        time.sleep(3)
 
-        # list of stalling phrases to try to get person to look at robot
-        stalls = [
-            "This will be lots of fun!",
-            "I Spy is my the best game ever.",
-            "I love playing I Spy!",
-            "We're going to have so much fun playing.",
-            "I Spy is so much fun.",
-            "I am so ready to play!"
-        ]
+        robot().colorEyes("blue")
 
-        while self.pitch_count < 20:
+        # repeatedly try get person's attention until they reply
+        robot().repeatUntilReply("Hey " + person_name + "?", 10)
+        self.pitchSumOverTime(1)
 
-            random.shuffle(stalls)
+        robot().colorEyes("green")
+        time.sleep(2)
 
-            for stall in stalls:
+        # finish talking and add to pitch sum while talking
+        robot().say("Are you ready to play?", block = False)
+        self.pitchSumOverTime(1)
 
-                robot().say(stall, block=False)
-                self.pitchSumOverTime(4)
-
-                if self.pitch_count >= 20:
-                    break
+        robot().colorEyes("pink")
 
         control_pitch = self.pitch_sum / self.pitch_count
 
@@ -137,6 +126,7 @@ class Gaze(object):
         print "person_pitch_adjustment:", self.person_pitch_adjustment
 
         # finish talking
+        time.sleep(2)
         robot().say("Okay, let's play!")
 
     def updatePersonGaze(self):
